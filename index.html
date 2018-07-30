@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Face finder</title>
+  <style>
+    html {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <canvas width="640" height="480"></canvas>
+  <script src="assets/camvas.js"></script>
+  <script src="assets/pico.js"></script>
+  <script>
+
+    window.onload = () => {
+      var updateMemory = pico.instantiate_detection_memory(5)
+      var facefinderClassifyRegion = (r, c, s, pixels, ldim) => -1.0
+      var avatar = new Image()
+      avatar.src = 'assets/avatar.png'
+
+      function rgbaToGrayscale(rgba, nrows, ncols) {
+        var gray = new Uint8Array(nrows * ncols)
+        for (var r = 0; r < nrows; ++r) {
+          for (var c = 0; c < ncols; ++c) {
+            gray[r * ncols + c] = (2 * rgba[r * 4 * ncols + 4 * c + 0] + 7 * rgba[r * 4 * ncols + 4 * c + 1] + 1 * rgba[r * 4 * ncols + 4 * c + 2]) / 10
+          }
+        }
+        return gray
+      }
+
+      fetch('assets/facefinder').then(res => {
+        res.arrayBuffer().then(buffer => {
+          var bytes = new Int8Array(buffer)
+          facefinderClassifyRegion = pico.unpack_cascade(bytes)
+          console.log('* cascade loaded')
+        })
+      })
+
+      var ctx = document.getElementsByTagName('canvas')[0].getContext('2d')
+      new camvas(ctx, (video, dt) => {
+        ctx.drawImage(video, 0, 0)
+        var rgba = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height).data
+
+        image = { pixels: rgbaToGrayscale(rgba, ctx.canvas.height, ctx.canvas.width), nrows: ctx.canvas.height, ncols: ctx.canvas.width, ldim: ctx.canvas.width }
+        params = { shiftfactor: 0.1, minsize: 100, maxsize: 1000, scalefactor: 1.1 }
+
+        dets = pico.run_cascade(image, facefinderClassifyRegion, params)
+        dets = updateMemory(dets)
+        dets = pico.cluster_detections(dets, 0.2)
+
+        for (i = 0; i < dets.length; ++i) {
+          if (dets[i][3] > 50.0) {
+            // ctx.beginPath()
+            // ctx.arc(dets[i][1], dets[i][0], dets[i][2] / 2, 0, 2 * Math.PI, false)
+            // ctx.lineWidth = 3
+            // ctx.strokeStyle = 'green'
+            // ctx.stroke()
+            var x = dets[i][1] - dets[i][2] / 2
+            var y = dets[i][0] - dets[i][2] / 2
+            ctx.drawImage(avatar, x, y, dets[i][2], dets[i][2])
+          }
+        }
+      })
+    }
+  </script>
+</body>
+</html>
